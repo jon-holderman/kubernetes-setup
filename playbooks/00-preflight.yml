@@ -76,7 +76,7 @@
               # Allow kubernetes user to run specific commands without password
               {{ k8s_user }} ALL=(ALL) NOPASSWD: /usr/bin/kubeadm, /usr/bin/kubelet, /usr/bin/kubectl
               # Allow kubernetes user to manage kubernetes directories
-              {{ k8s_user }} ALL=(ALL) NOPASSWD: /bin/chown -R {{ k8s_user }}:{{ k8s_group }} /etc/kubernetes/, /var/lib/kubernetes/, /var/log/kubernetes/
+              {{ k8s_user }} ALL=(ALL) NOPASSWD: /bin/chown -R {{ k8s_user }}\:{{ k8s_group }} /etc/kubernetes/*, /var/lib/kubernetes/*, /var/log/kubernetes/*
             mode: "0440"
             validate: "/usr/sbin/visudo -cf %s"
 
