@@ -17,13 +17,19 @@
             - net.ipv6.conf.all.disable_ipv6
             - net.ipv6.conf.default.disable_ipv6
 
-        - name: Disable IPv6 in GRUB
-          ansible.builtin.lineinfile:
-            path: /etc/default/grub
-            regexp: '^GRUB_CMDLINE_LINUX="(.*)"'
-            line: 'GRUB_CMDLINE_LINUX="\1 ipv6.disable=1"'
-            backrefs: true
-          notify: Rebuild grub config
+        - name: Get Ethernet Interface Names
+          ansible.builtin.shell: "set -o pipefail && nmcli connection show | grep ethernet | awk '{print $1}'"
+          changed_when: false
+          register: ethernet_interface_name
+
+        - name:  Disable IPv6 in Network Manager
+          community.general.nmcli:
+            type: ethernet
+            conn_name: "{{ item }}"
+            method6: disabled
+            state: present
+          with_items: "{{ ethernet_interface_name.stdout_lines }}"
+          when: ethernet_interface_name.stdout_lines | length > 0
 
         - name: Remove IPv6 localhost entry
           ansible.builtin.lineinfile:
