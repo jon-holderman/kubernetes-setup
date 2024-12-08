@@ -3,9 +3,9 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
     hooks:
-    -   id: check-yaml
-    -   id: end-of-file-fixer
-    -   id: trailing-whitespace
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
   - repo: https://github.com/ansible-community/ansible-lint.git
     rev: v24.10.0
     hooks:
@@ -14,4 +14,3 @@ repos:
         description: Run configurations on .ansible-lint file
         verbose: true
         files: \.(yaml|yml)$
-

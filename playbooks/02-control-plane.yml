@@ -1,0 +1,11 @@
+---
+- name: Control Plane Configuration
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Todo Message
+      ansible.builtin.debug:
+        msg:
+          - "Work in Progress..."

@@ -1,5 +1,6 @@
 ---
-- hosts: localhost
+- name: Role Testing
+  hosts: localhost
   remote_user: root
   roles:
     - cleanup

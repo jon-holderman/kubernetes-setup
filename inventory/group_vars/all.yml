@@ -10,7 +10,7 @@ calico_version: "v3.29.1"
 
 # Load Balancer Configuration
 metallb_version: "v0.14.8"
-metallb_ip_range: "192.168.1.240-192.168.1.250"
+metallb_ip_range: "192.168.61.100-192.168.61.150"
 
 # Ingress Configuration
 nginx_ingress_version: "v1.11.3"

@@ -2,12 +2,33 @@
 extends: default
 
 rules:
+  braces:
+    level: warning
+    max-spaces-inside: 1
+  brackets:
+    level: warning
+    max-spaces-inside: 1
+  colons:
+    level: warning
+  commas:
+    level: warning
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: disable
+  document-start: disable
+  empty-lines:
+    level: warning
+  hyphens:
+    level: warning
+  indentation:
+    level: warning
+    indent-sequences: consistent
   line-length:
-    max: 260
-
+    max: 160
+    allow-non-breakable-inline-mappings: true
   truthy:
     allowed-values: ["true", "false"]
     check-keys: true
-
-  comments:
-    min-spaces-from-content: 1
+  octal-values:
+    forbid-implicit-octal: true
+    forbid-explicit-octal: true

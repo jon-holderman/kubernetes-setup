@@ -5,19 +5,45 @@
   gather_facts: true
 
   tasks:
+    - name: Disable IPv6
+      block:
+        - name: Add IPv6 disable parameters to sysctl
+          ansible.posix.sysctl:
+            name: "{{ item }}"
+            value: "1"
+            state: present
+            reload: true
+          loop:
+            - net.ipv6.conf.all.disable_ipv6
+            - net.ipv6.conf.default.disable_ipv6
+
+        - name: Disable IPv6 in GRUB
+          ansible.builtin.lineinfile:
+            path: /etc/default/grub
+            regexp: '^GRUB_CMDLINE_LINUX="(.*)"'
+            line: 'GRUB_CMDLINE_LINUX="\1 ipv6.disable=1"'
+            backrefs: true
+          notify: Rebuild grub config
+
+        - name: Remove IPv6 localhost entry
+          ansible.builtin.lineinfile:
+            path: /etc/hosts
+            regexp: "^::1"
+            state: absent
+
     - name: Update all packages
-      dnf:
+      ansible.builtin.dnf:
         name: "*"
         state: latest
         update_cache: true
 
     - name: Install EPEL repository
-      dnf:
+      ansible.builtin.dnf:
         name: epel-release
         state: present
 
     - name: Install required packages
-      dnf:
+      ansible.builtin.dnf:
         name:
           - vim
           - cockpit
@@ -36,23 +62,23 @@
     - name: Disable SELinux
       block:
         - name: Set SELinux to disabled state
-          selinux:
+          ansible.posix.selinux:
             state: disabled
-          
+
         - name: Ensure SELinux is disabled at boot
-          lineinfile:
+          ansible.builtin.lineinfile:
             path: /etc/selinux/config
-            regexp: '^SELINUX='
-            line: 'SELINUX=disabled'
+            regexp: "^SELINUX="
+            line: "SELINUX=disabled"
 
     - name: Enable and start Cockpit service
-      systemd:
+      ansible.builtin.systemd_service:
         name: cockpit.socket
         state: started
         enabled: true
 
     - name: Add Kubernetes repository
-      yum_repository:
+      ansible.builtin.yum_repository:
         name: kubernetes
         description: Kubernetes repository
         baseurl: https://pkgs.k8s.io/core:/stable:/v1.31/rpm/
@@ -63,36 +89,37 @@
     - name: Configure containerd
       block:
         - name: Add containerd repository
-          get_url:
+          ansible.builtin.get_url:
             url: https://download.docker.com/linux/centos/docker-ce.repo
             dest: /etc/yum.repos.d/docker-ce.repo
+            mode: "0440"
 
         - name: Install containerd
-          dnf:
+          ansible.builtin.dnf:
             name: containerd.io
             state: present
 
         - name: Create containerd config directory
-          file:
+          ansible.builtin.file:
             path: /etc/containerd
             state: directory
-            mode: '0755'
+            mode: "0755"
 
         - name: Generate default containerd config
-          command: containerd config default
+          ansible.builtin.command: containerd config default
           register: containerd_config
           changed_when: false
 
         - name: Write containerd config
-          copy:
+          ansible.builtin.copy:
             content: "{{ containerd_config.stdout }}"
             dest: /etc/containerd/config.toml
             owner: root
             group: root
-            mode: '0644'
+            mode: "0644"
 
         - name: Restart containerd
-          systemd:
+          ansible.builtin.systemd_service:
             name: containerd
             state: restarted
             enabled: true
@@ -100,73 +127,75 @@
     - name: Configure system for Kubernetes
       block:
         - name: Disable swap
-          command: swapoff -a
+          ansible.builtin.command: swapoff -a
           when: ansible_swaptotal_mb > 0
+          changed_when: ansible_swaptotal_mb > 0
 
         - name: Remove swap from fstab
-          replace:
+          ansible.builtin.replace:
             path: /etc/fstab
-            regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
-            replace: '# \1'
+            regexp: "^([^#].*?\\sswap\\s+sw\\s+.*)$"
+            replace: "# \\1"
 
         - name: Ensure br_netfilter module is loaded
-          modprobe:
+          community.general.modprobe:
             name: br_netfilter
             state: present
 
         - name: Ensure overlay module is loaded
-          modprobe:
+          community.general.modprobe:
             name: overlay
             state: present
 
         - name: Persist module loading
-          copy:
+          ansible.builtin.copy:
             dest: /etc/modules-load.d/k8s.conf
             content: |
               overlay
               br_netfilter
-            mode: '0644'
+            mode: "0644"
 
         - name: Configure kernel parameters for Kubernetes
-          sysctl:
+          ansible.posix.sysctl:
             name: "{{ item.name }}"
             value: "{{ item.value }}"
             state: present
             sysctl_set: true
             reload: true
           loop:
-            - { name: 'net.bridge.bridge-nf-call-iptables', value: '1' }
-            - { name: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
-            - { name: 'net.ipv4.ip_forward', value: '1' }
+            - { name: "net.bridge.bridge-nf-call-iptables", value: "1" }
+            - name: "net.bridge.bridge-nf-call-ip6tables"
+              value: "1"
+            - { name: "net.ipv4.ip_forward", value: "1" }
 
     - name: Configure firewall
       block:
         - name: Install firewalld
-          dnf:
+          ansible.builtin.dnf:
             name: firewalld
             state: present
 
         - name: Start and enable firewalld
-          systemd:
+          ansible.builtin.systemd_service:
             name: firewalld
             state: started
             enabled: true
 
         - name: Configure required ports for Kubernetes
-          firewalld:
+          ansible.posix.firewalld:
             port: "{{ item }}"
             permanent: true
             state: enabled
           loop:
-            - 6443/tcp    # Kubernetes API server
+            - 6443/tcp # Kubernetes API server
             - 2379-2380/tcp # etcd server client API
-            - 10250/tcp   # Kubelet API
-            - 10251/tcp   # kube-scheduler
-            - 10252/tcp   # kube-controller-manager
-            - 8472/udp    # Calico VXLAN
-            - 179/tcp     # Calico BGP
-            
+            - 10250/tcp # Kubelet API
+            - 10251/tcp # kube-scheduler
+            - 10252/tcp # kube-controller-manager
+            - 8472/udp # Calico VXLAN
+            - 179/tcp # Calico BGP
+
         - name: Reload firewalld
-          systemd:
+          ansible.builtin.systemd_service:
             name: firewalld
             state: reloaded
