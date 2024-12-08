@@ -1,0 +1,29 @@
+---
+# Profiles gradually increase the strictness of rules as your Ansible content lifecycle. 
+# We set it to "production" in order to ensure that content meets requirements for inclusion in Ansible Automation Platform (AAP) as validated or certified content.
+
+profile: production 
+
+# Enable checking of loop variable prefixes in roles
+loop_var_prefix: "^(__|{role}_)"
+
+# Enforce variable names to follow pattern below, in addition to Ansible own
+# requirements, like avoiding python identifiers. To disable add `var-naming`
+# to skip_list.
+var_naming_pattern: "^[a-z_][a-z0-9_]*$"
+
+# exclude_paths included in this file are parsed relative to this file's location and not relative to the CWD of execution.
+exclude_paths:
+  - .cache/
+  - .github/
+  - excludethis/
+
+# Ansible-lint does not fail on warnings from the rules or tags listed below
+warn_list: 
+  - command-instead-of-module
+  - command-instead-of-shell
+
+# Ansible-lint will skip and ignore the rules or tags listed below
+# Uncomment next two lines in order to disable YAML syntax violations
+#skip_list:
+#  - yaml
