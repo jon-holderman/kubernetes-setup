@@ -4,7 +4,7 @@
   become: true
   gather_facts: true
   roles:
-    - common
+    - ../roles/common
   vars:
     k8s_user: "svc_lin_kubernetes"
     k8s_group: "kubernetes"
