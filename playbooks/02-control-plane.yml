@@ -145,12 +145,24 @@
       delay: 10
       until: api_ready is success
 
+    - name: Check if Calico is already installed
+      ansible.builtin.command: 
+        cmd: kubectl get pods -n kube-system -l k8s-app=calico-node
+      register: calico_check
+      changed_when: false
+      failed_when: false
+      become: true
+      become_user: "{{ k8s_user }}"
+
     - name: Install Calico CNI
       ansible.builtin.shell: |
         export KUBECONFIG=/home/{{ ansible_user }}/.kube/config
-        kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml
+        kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml
+      become: true
+      become_user: "{{ k8s_user }}"
       register: calico_result
       changed_when: "'created' in calico_result.stdout"
+      when: calico_check.rc != 0
 
     - name: Install MetalLB
       block:
