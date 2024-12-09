@@ -131,6 +131,12 @@
             group: root
             mode: "0644"
 
+        - name: Update pause container version
+          ansible.builtin.replace:
+            path: /etc/containerd/config.toml
+            regexp: 'pause:3\.8'
+            replace: 'pause:3.10'
+
         - name: Configure containerd endpoint
           ansible.builtin.lineinfile:
             path: /etc/crictl.yaml
