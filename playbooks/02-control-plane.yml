@@ -20,6 +20,7 @@
         name: kubelet
         state: started
         enabled: true
+      check_mode: false
 
     - name: Get short hostname
       ansible.builtin.command: hostname -s
