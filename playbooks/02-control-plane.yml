@@ -1,11 +1,147 @@
+# playbooks/02-control-plane.yml
 ---
-- name: Control Plane Configuration
-  hosts: all
+- name: Initialize Kubernetes Control Plane
+  hosts: control_plane
   become: true
   gather_facts: true
 
   tasks:
-    - name: Todo Message
-      ansible.builtin.debug:
-        msg:
-          - "Work in Progress..."
+    - name: Install Kubernetes packages
+      ansible.builtin.dnf:
+        name:
+          - kubelet-{{ kubernetes_version }}
+          - kubeadm-{{ kubernetes_version }}
+          - kubectl-{{ kubernetes_version }}
+        state: present
+        disable_excludes: kubernetes
+
+    - name: Enable and start kubelet service
+      ansible.builtin.systemd:
+        name: kubelet
+        state: started
+        enabled: true
+
+    - name: Get short hostname
+      ansible.builtin.command: hostname -s
+      register: hostname_result
+      changed_when: false
+
+    - name: Generate kubeadm config
+      ansible.builtin.template:
+        src: templates/kubeadm-config.yaml.j2
+        dest: /etc/kubernetes/kubeadm-config.yaml
+        owner: "{{ k8s_user }}"
+        group: "{{ k8s_group }}"
+        mode: '0640'
+
+    - name: Initialize Kubernetes cluster
+      ansible.builtin.command: >
+        kubeadm init 
+        --config=/etc/kubernetes/kubeadm-config.yaml 
+        --upload-certs
+      register: kubeadm_init
+      changed_when: "'Successfully initialized' in kubeadm_init.stdout"
+      failed_when: 
+        - kubeadm_init.rc != 0
+        - "'already exists' not in kubeadm_init.stderr"
+
+    - name: Create .kube directory for kubernetes service account
+      ansible.builtin.file:
+        path: "/home/{{ k8s_user }}/.kube"
+        state: directory
+        owner: "{{ k8s_user }}"
+        group: "{{ k8s_group }}"
+        mode: '0750'
+
+    - name: Copy admin.conf to kubernetes service account's .kube directory
+      ansible.builtin.copy:
+        src: /etc/kubernetes/admin.conf
+        dest: "/home/{{ k8s_user }}/.kube/config"
+        remote_src: true
+        owner: "{{ k8s_user }}"
+        group: "{{ k8s_group }}"
+        mode: '0600'
+
+    - name: Install Calico CNI
+      ansible.builtin.command: >
+        kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml
+      become: true
+      become_user: "{{ k8s_user }}"
+      register: calico_result
+      changed_when: "'created' in calico_result.stdout"
+
+    - name: Install MetalLB
+      block:
+        - name: Create MetalLB namespace
+          kubernetes.core.k8s:
+            name: metallb-system
+            api_version: v1
+            kind: Namespace
+            state: present
+          become: true
+          become_user: "{{ k8s_user }}"
+
+        - name: Install MetalLB operator
+          ansible.builtin.command: >
+            kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/{{ metallb_version }}/config/manifests/metallb-native.yaml
+          become: true
+          become_user: "{{ k8s_user }}"
+          register: metallb_result
+          changed_when: "'created' in metallb_result.stdout"
+
+        - name: Configure MetalLB IP pool
+          kubernetes.core.k8s:
+            state: present
+            definition:
+              apiVersion: metallb.io/v1beta1
+              kind: IPAddressPool
+              metadata:
+                name: first-pool
+                namespace: metallb-system
+              spec:
+                addresses:
+                  - "{{ metallb_ip_range }}"
+          become: true
+          become_user: "{{ k8s_user }}"
+
+        - name: Configure MetalLB L2 advertisement
+          kubernetes.core.k8s:
+            state: present
+            definition:
+              apiVersion: metallb.io/v1beta1
+              kind: L2Advertisement
+              metadata:
+                name: l2-advert
+                namespace: metallb-system
+              spec:
+                ipAddressPools:
+                  - first-pool
+          become: true
+          become_user: "{{ k8s_user }}"
+
+    - name: Install NGINX Ingress Controller
+      ansible.builtin.command: >
+        kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-{{ nginx_ingress_version }}/deploy/static/provider/cloud/deploy.yaml
+      become: true
+      become_user: "{{ k8s_user }}"
+      register: nginx_result
+      changed_when: "'created' in nginx_result.stdout"
+
+    - name: Get join command
+      ansible.builtin.command: kubeadm token create --print-join-command
+      register: join_command
+      changed_when: false
+
+    - name: Store join command
+      ansible.builtin.set_fact:
+        join_command: "{{ join_command.stdout_strip }}"
+
+    - name: Wait for control plane to be ready
+      ansible.builtin.command: kubectl wait --for=condition=Ready node/{{ hostname_result.stdout }} --timeout=300s
+      become: true
+      become_user: "{{ k8s_user }}"
+      register: node_ready
+      changed_when: false
+      retries: 30
+      delay: 10
+      until: node_ready.rc == 0
