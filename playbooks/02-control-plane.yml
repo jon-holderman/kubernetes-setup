@@ -353,21 +353,49 @@
           become: true
           become_user: "{{ k8s_user }}"
 
-        - name: Wait for NGINX Ingress Controller pods to be ready
-          kubernetes.core.k8s_info:
-            kind: Pod
+        - name: Add tolerations to NGINX Ingress admission jobs
+          kubernetes.core.k8s:
+            state: patched
             namespace: ingress-nginx
-            label_selectors:
-              - app.kubernetes.io/component=controller
-          register: nginx_pods
+            kind: Job
+            name: "{{ item }}"
+            definition:
+              apiVersion: batch/v1
+              kind: Job
+              metadata:
+                name: "{{ item }}"
+                namespace: ingress-nginx
+              spec:
+                template:
+                  spec:
+                    tolerations:
+                      - effect: NoSchedule
+                        key: node-role.kubernetes.io/control-plane
+                        operator: Exists
+          become: true
+          become_user: "{{ k8s_user }}"
+          loop:
+            - ingress-nginx-admission-create
+            - ingress-nginx-admission-patch
+
+        - name: Wait for NGINX Ingress admission jobs to complete
+          kubernetes.core.k8s_info:
+            kind: Job
+            namespace: ingress-nginx
+            name: "{{ item }}"
+          register: nginx_jobs
           until: 
-            - nginx_pods.resources is defined
-            - nginx_pods.resources | length > 0
-            - nginx_pods.resources | map(attribute='status.phase') | list | unique == ['Running']
+            - nginx_jobs.resources is defined 
+            - nginx_jobs.resources | length > 0
+            - nginx_jobs.resources[0].status.succeeded is defined
+            - nginx_jobs.resources[0].status.succeeded > 0
           retries: 30
           delay: 10
           become: true
           become_user: "{{ k8s_user }}"
+          loop:
+            - ingress-nginx-admission-create
+            - ingress-nginx-admission-patch
 
     - name: Get join command
       ansible.builtin.command:
