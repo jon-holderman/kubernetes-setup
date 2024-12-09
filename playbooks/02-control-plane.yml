@@ -225,8 +225,6 @@
           kubernetes.core.k8s:
             state: present
             src: "{{ temp_manifest_dir }}/metallb.yaml"
-            wait: true
-            wait_timeout: 300
           become: true
           become_user: "{{ k8s_user }}"
           register: metallb_result
