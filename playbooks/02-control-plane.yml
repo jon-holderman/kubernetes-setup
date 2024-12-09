@@ -326,49 +326,67 @@
             group: "{{ k8s_group }}"
           register: nginx_download
 
-        - name: Load the manifest YAML file into a variable
+        - name: Load NGINX manifest into variable
           ansible.builtin.slurp:
             src: "{{ temp_manifest_dir }}/nginx-ingress.yaml"
-          register: manifest_content
+          register: nginx_manifest_encoded
     
-        - name: Convert YAML content to a structured variable
+        - name: Parse YAML content
           ansible.builtin.set_fact:
-            manifest_data: "{{ manifest_content.content | b64decode | from_yaml }}"
+            nginx_manifests: "{{ nginx_manifest_encoded['content'] | b64decode | from_yaml_all | list }}"
     
-        - name: Add tolerations to ingress controller deployment
+        - name: Add tolerations to required components
           ansible.builtin.set_fact:
-            manifest_data: "{{ manifest_data | merge({'items': [{'spec': {'template': {'spec': {'tolerations': [{'key': 'node-role.kubernetes.io/control-plane', 'operator': 'Exists', 'effect': 'NoSchedule'}]}}}}]}) }}"
+            modified_manifests: "{{ nginx_manifests | map('combine', item.patch, recursive=True) 
+              if (item.kind in item.manifest.kind and item.name in item.manifest.metadata.name) else item.manifest }}"
+          vars:
+            toleration_spec:
+              - kind: "Deployment"
+                name: "ingress-nginx-controller"
+                patch:
+                  spec:
+                    template:
+                      spec:
+                        tolerations:
+                          - key: "node-role.kubernetes.io/control-plane"
+                            operator: "Exists"
+                            effect: "NoSchedule"
+              - kind: "Job"
+                name: "ingress-nginx-admission-create"
+                patch:
+                  spec:
+                    template:
+                      spec:
+                        tolerations:
+                          - key: "node-role.kubernetes.io/control-plane"
+                            operator: "Exists"
+                            effect: "NoSchedule"
+              - kind: "Job"
+                name: "ingress-nginx-admission-patch"
+                patch:
+                  spec:
+                    template:
+                      spec:
+                        tolerations:
+                          - key: "node-role.kubernetes.io/control-plane"
+                            operator: "Exists"
+                            effect: "NoSchedule"
+          loop: "{{ toleration_spec }}"
     
-        - name: Convert modified YAML structure back to a string
-          ansible.builtin.set_fact:
-            updated_manifest: "{{ manifest_data | to_yaml }}"
-    
-        - name: Write the modified manifest back to the file
+        - name: Write modified manifests back to file
           ansible.builtin.copy:
-            dest: "{{ temp_manifest_dir }}/nginx-ingress-modified.yaml"
-            content: "{{ updated_manifest }}"
+            content: "{{ modified_manifests | to_yaml_all }}"
+            dest: "{{ temp_manifest_dir }}/nginx-ingress.yaml"
             mode: '0664'
-
-        - name: Debug controller deployment section
-          ansible.builtin.shell: |
-            sed -n '/kind: Deployment/,/---/p' {{ temp_manifest_dir }}/nginx-ingress.yaml | grep -A 10 'name: ingress-nginx-controller'
-          register: controller_section
-          changed_when: false
-
-        - name: Debug admission job sections
-          ansible.builtin.shell: |
-            sed -n '/kind: Job/,/---/p' {{ temp_manifest_dir }}/nginx-ingress.yaml
-          register: job_sections
-          changed_when: false
-
-        - name: Show debug sections
+            owner: "{{ k8s_user }}"
+            group: "{{ k8s_group }}"
+    
+        - name: Debug modified components
           ansible.builtin.debug:
-            msg:
-              - "Controller Deployment Section:"
-              - "{{ controller_section.stdout_lines }}"
-              - "Admission Jobs Sections:"
-              - "{{ job_sections.stdout_lines }}"
-
+            msg: "{{ modified_manifests | json_query(query) }}"
+          vars:
+            query: "[?kind=='Deployment' || kind=='Job'].{kind: kind, name: metadata.name, tolerations: spec.template.spec.tolerations}"
+    
         - name: Apply NGINX Ingress Controller manifest
           kubernetes.core.k8s:
             state: present
