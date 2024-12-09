@@ -231,6 +231,46 @@
           become_user: "{{ k8s_user }}"
           register: metallb_result
 
+        - name: Add tolerations to MetalLB controller
+          kubernetes.core.k8s:
+            state: patched
+            namespace: metallb-system
+            definition:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: controller
+                namespace: metallb-system
+              spec:
+                template:
+                  spec:
+                    tolerations:
+                      - effect: NoSchedule
+                        key: node-role.kubernetes.io/control-plane
+                        operator: Exists
+          become: true
+          become_user: "{{ k8s_user }}"
+
+        - name: Add tolerations to MetalLB speaker
+          kubernetes.core.k8s:
+            state: patched
+            namespace: metallb-system
+            definition:
+              apiVersion: apps/v1
+              kind: DaemonSet
+              metadata:
+                name: speaker
+                namespace: metallb-system
+              spec:
+                template:
+                  spec:
+                    tolerations:
+                      - effect: NoSchedule
+                        key: node-role.kubernetes.io/control-plane
+                        operator: Exists
+          become: true
+          become_user: "{{ k8s_user }}"
+
         - name: Wait for MetalLB pods to be ready
           ansible.builtin.command:
             cmd: kubectl wait --namespace metallb-system --for=condition=ready pod --selector=app=metallb --timeout=180s
