@@ -139,12 +139,8 @@
 
     - name: Install Calico CNI
       ansible.builtin.shell: |
-        export KUBECONFIG=/etc/kubernetes/admin.conf
+        export KUBECONFIG=/home/{{ ansible_user }}/.kube/config
         "kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml"
-      become: true
-      become_user: "{{ k8s_user }}"
-      environment:
-        KUBECONFIG: "/home/{{ k8s_user }}/.kube/config"
       register: calico_result
       changed_when: "'created' in calico_result.stdout"
 
