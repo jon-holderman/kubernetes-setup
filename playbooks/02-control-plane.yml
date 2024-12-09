@@ -64,8 +64,8 @@
         mode: '0600'
 
     - name: Install Calico CNI
-      ansible.builtin.command: >
-        kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml
+      ansible.builtin.command:
+        cmd: "kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml --validate=false"
       become: true
       become_user: "{{ k8s_user }}"
       register: calico_result
@@ -83,8 +83,8 @@
           become_user: "{{ k8s_user }}"
 
         - name: Install MetalLB operator
-          ansible.builtin.command: >
-            kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/{{ metallb_version }}/config/manifests/metallb-native.yaml
+          ansible.builtin.command:
+            cmd: "kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/{{ metallb_version }}/config/manifests/metallb-native.yaml --validate=false"
           become: true
           become_user: "{{ k8s_user }}"
           register: metallb_result
