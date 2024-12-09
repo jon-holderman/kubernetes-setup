@@ -148,7 +148,7 @@
     - name: Install Calico CNI
       ansible.builtin.shell: |
         export KUBECONFIG=/home/{{ ansible_user }}/.kube/config
-        kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml
+        kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml
       register: calico_result
       changed_when: "'created' in calico_result.stdout"
 
@@ -163,9 +163,24 @@
           become: true
           become_user: "{{ k8s_user }}"
 
+        - name: Create MetalLB memberlist secret
+          kubernetes.core.k8s:
+            state: present
+            definition:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: memberlist
+                namespace: metallb-system
+              type: Opaque
+              stringData:
+                secretkey: "{{ lookup('password', '/dev/null chars=ascii_letters,digits length=128') }}"
+          become: true
+          become_user: "{{ k8s_user }}"
+
         - name: Install MetalLB operator
           ansible.builtin.command:
-            cmd: "kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/{{ metallb_version }}/config/manifests/metallb-native.yaml"
+            cmd: "kubectl create -f https://raw.githubusercontent.com/metallb/metallb/{{ metallb_version }}/config/manifests/metallb-native.yaml"
           become: true
           become_user: "{{ k8s_user }}"
           register: metallb_result
@@ -229,7 +244,7 @@
 
     - name: Install NGINX Ingress Controller
       ansible.builtin.command:
-        cmd: "kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-{{ nginx_ingress_version }}/deploy/static/provider/cloud/deploy.yaml"
+        cmd: "kubectl create -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-{{ nginx_ingress_version }}/deploy/static/provider/cloud/deploy.yaml"
       become: true
       become_user: "{{ k8s_user }}"
       register: nginx_result
