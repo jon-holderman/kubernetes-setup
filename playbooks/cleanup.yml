@@ -1,11 +1,93 @@
 ---
-- name: Cleanup Configuration
+- name: Clean up Kubernetes Installation
   hosts: all
   become: true
   gather_facts: true
-
+  
   tasks:
-    - name: Todo Message
-      ansible.builtin.debug:
-        msg:
-          - "Work in Progress..."
+    - name: Stop kubelet service
+      ansible.builtin.systemd:
+        name: kubelet
+        state: stopped
+        enabled: false
+      ignore_errors: true
+
+    - name: Reset kubeadm
+      ansible.builtin.command: kubeadm reset -f
+      ignore_errors: true
+
+    - name: Remove CNI configurations
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/cni/net.d
+        - /opt/cni/bin
+      ignore_errors: true
+
+    - name: Remove kubernetes directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/kubernetes/
+        - /var/lib/kubelet
+        - /var/lib/etcd
+        - /var/lib/kubernetes
+        - /etc/cni
+        - /opt/cni
+        - "~/.kube"
+      ignore_errors: true
+
+    - name: Remove containerd state
+      ansible.builtin.systemd:
+        name: containerd
+        state: stopped
+      ignore_errors: true
+
+    - name: Clean containerd data
+      ansible.builtin.file:
+        path: /var/lib/containerd
+        state: absent
+      ignore_errors: true
+
+    - name: Restart containerd
+      ansible.builtin.systemd:
+        name: containerd
+        state: restarted
+        daemon_reload: true
+      ignore_errors: true
+
+    - name: Remove iptables rules
+      ansible.builtin.shell: |
+        iptables -F
+        iptables -X
+        iptables -t nat -F
+        iptables -t nat -X
+        iptables -t mangle -F
+        iptables -t mangle -X
+        iptables -P INPUT ACCEPT
+        iptables -P FORWARD ACCEPT
+        iptables -P OUTPUT ACCEPT
+      ignore_errors: true
+
+    - name: Ensure all pods are removed
+      ansible.builtin.command: crictl rmp -fa
+      ignore_errors: true
+
+    - name: Remove all containers
+      ansible.builtin.command: crictl rm -fa
+      ignore_errors: true
+
+    - name: Remove service account directories
+      ansible.builtin.file:
+        path: "/home/{{ item }}/.kube"
+        state: absent
+      loop:
+        - "{{ k8s_user }}"
+        - "{{ ansible_user }}"
+      ignore_errors: true
+
+    - name: Restart server
+      ansible.builtin.reboot:
+      ignore_errors: true
