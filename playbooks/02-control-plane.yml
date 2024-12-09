@@ -63,6 +63,12 @@
         group: "{{ k8s_group }}"
         mode: '0600'
 
+    - name: Set KUBECONFIG environment for service account
+      ansible.builtin.lineinfile:
+        path: "/home/{{ k8s_user }}/.bashrc"
+        line: 'export KUBECONFIG=/home/{{ k8s_user }}/.kube/config'
+        state: present
+
     - name: Wait for Kubernetes API to be ready
       ansible.builtin.wait_for:
         host: "{{ ansible_host }}"
@@ -72,12 +78,6 @@
       until: api_wait_result is success
       retries: 30
       delay: 10
-
-    - name: Set KUBECONFIG environment for service account
-      ansible.builtin.lineinfile:
-        path: "/home/{{ k8s_user }}/.bashrc"
-        line: 'export KUBECONFIG=/home/{{ k8s_user }}/.kube/config'
-        state: present
 
     - name: Install Calico CNI
       ansible.builtin.command:
