@@ -324,7 +324,23 @@
             dest: "{{ temp_manifest_dir }}/nginx-ingress.yaml"
             mode: '0664'
           register: nginx_download
-  
+
+        - name: Add tolerations to NGINX admission jobs
+          ansible.builtin.replace:
+            path: "{{ temp_manifest_dir }}/nginx-ingress.yaml"
+            regexp: '^(\s+)serviceAccountName: ingress-nginx-admission\n(\s+)(?=(nodeSelector|restartPolicy|containers))' 
+            replace: '\1serviceAccountName: ingress-nginx-admission\n\1tolerations:\n\1- key: node-role.kubernetes.io/control-plane\n\1  operator: Exists\n\1  effect: NoSchedule\n\2'
+          become: true
+
+        - name: Show modified manifest
+          ansible.builtin.command: "grep -A 20 'ingress-nginx-admission' {{ temp_manifest_dir }}/nginx-ingress.yaml"
+          register: debug_manifest
+          changed_when: false
+      
+        - name: Debug manifest changes
+          ansible.builtin.debug:
+            var: debug_manifest.stdout_lines
+
         - name: Apply NGINX Ingress Controller manifest
           kubernetes.core.k8s:
             state: present
@@ -353,30 +369,30 @@
           become: true
           become_user: "{{ k8s_user }}"
 
-        - name: Add tolerations to NGINX Ingress admission jobs
-          kubernetes.core.k8s:
-            state: patched
-            namespace: ingress-nginx
-            kind: Job
-            name: "{{ item }}"
-            definition:
-              apiVersion: batch/v1
-              kind: Job
-              metadata:
-                name: "{{ item }}"
-                namespace: ingress-nginx
-              spec:
-                template:
-                  spec:
-                    tolerations:
-                      - effect: NoSchedule
-                        key: node-role.kubernetes.io/control-plane
-                        operator: Exists
-          become: true
-          become_user: "{{ k8s_user }}"
-          loop:
-            - ingress-nginx-admission-create
-            - ingress-nginx-admission-patch
+        # - name: Add tolerations to NGINX Ingress admission jobs
+        #   kubernetes.core.k8s:
+        #     state: patched
+        #     namespace: ingress-nginx
+        #     kind: Job
+        #     name: "{{ item }}"
+        #     definition:
+        #       apiVersion: batch/v1
+        #       kind: Job
+        #       metadata:
+        #         name: "{{ item }}"
+        #         namespace: ingress-nginx
+        #       spec:
+        #         template:
+        #           spec:
+        #             tolerations:
+        #               - effect: NoSchedule
+        #                 key: node-role.kubernetes.io/control-plane
+        #                 operator: Exists
+        #   become: true
+        #   become_user: "{{ k8s_user }}"
+        #   loop:
+        #     - ingress-nginx-admission-create
+        #     - ingress-nginx-admission-patch
 
         - name: Wait for NGINX Ingress admission jobs to complete
           kubernetes.core.k8s_info:
