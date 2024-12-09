@@ -59,6 +59,7 @@
             system: true
             shell: /bin/bash
             create_home: true
+            password: '!'
             state: present
 
         - name: Allow jholderman to switch to kubernetes service account
