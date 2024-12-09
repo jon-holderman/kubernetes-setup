@@ -65,6 +65,13 @@
           - iproute-tc
         state: present
 
+    - name: Install Required Python Packages
+      ansible.builtin.pip:
+        name: 
+          - pyyaml
+          - kubernetes
+          - jsonpatch
+
     - name: Disable SELinux
       block:
         - name: Set SELinux to disabled state
