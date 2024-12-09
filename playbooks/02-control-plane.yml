@@ -12,9 +12,13 @@
       ansible.builtin.file:
         path: "{{ temp_manifest_dir }}"
         state: directory
+        mode: '0750'
         owner: "{{ k8s_user }}"
         group: "{{ k8s_group }}"
-        mode: '0640'
+
+    - name: Ensure SELinux context is correct for temp directory
+      ansible.builtin.command: "chcon -Rt container_file_t {{ temp_manifest_dir }}"
+      changed_when: true
 
   tasks:
     - name: Install Kubernetes packages
@@ -225,7 +229,7 @@
           kubernetes.core.k8s:
             state: present
             src: "{{ temp_manifest_dir }}/metallb.yaml"
-            wait: yes
+            wait: true
             wait_timeout: 300
           become: true
           become_user: "{{ k8s_user }}"
@@ -285,7 +289,7 @@
           kubernetes.core.k8s:
             state: present
             src: "{{ temp_manifest_dir }}/nginx-ingress.yaml"
-            wait: yes
+            wait: true
             wait_timeout: 300
           become: true
           become_user: "{{ k8s_user }}"
