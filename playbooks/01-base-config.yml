@@ -119,23 +119,29 @@
             mode: "0755"
 
         - name: Generate default containerd config
-          ansible.builtin.command: containerd config default
-          register: containerd_config
-          changed_when: false
+          ansible.builtin.command: 
+            cmd: containerd config default > /etc/containerd/config.toml
+          args:
+            creates: /etc/containerd/config.toml
 
-        - name: Write containerd config
-          ansible.builtin.copy:
-            content: "{{ containerd_config.stdout }}"
-            dest: /etc/containerd/config.toml
+        - name: Set containerd config permissions
+          ansible.builtin.file:
+            path: /etc/containerd/config.toml
             owner: root
             group: root
             mode: "0644"
 
-        - name: Update pause container version
+        - name: Update containerd configuration for sandbox image
           ansible.builtin.replace:
             path: /etc/containerd/config.toml
-            regexp: 'pause:3\.8'
-            replace: 'pause:3.10'
+            regexp: '^(\s*sandbox_image\s*=\s*).*'
+            replace: '\1"registry.k8s.io/pause:3.10"'
+
+        - name: Configure SystemdCgroup for containerd
+          ansible.builtin.replace:
+            path: /etc/containerd/config.toml
+            regexp: '^(\s*SystemdCgroup\s*=\s*)false'
+            replace: '\1true'
 
         - name: Configure containerd endpoint
           ansible.builtin.lineinfile:
