@@ -25,6 +25,14 @@
       ansible.builtin.set_fact:
         k8s_node_name: "{{ hostname_result.stdout }}"
 
+    - name: Template the /etc/hosts file
+      ansible.builtin.template:
+        src: ../templates/hosts.j2
+        dest: /etc/hosts
+        owner: root
+        group: root
+        mode: '0644'
+
   tasks:
     - name: Verify system requirements
       block:
