@@ -270,14 +270,20 @@
           become_user: "{{ k8s_user }}"
 
         - name: Wait for MetalLB pods to be ready
-          ansible.builtin.command:
-            cmd: kubectl wait --namespace metallb-system --for=condition=ready pod --selector=app=metallb --timeout=180s
-          become: true
-          become_user: "{{ k8s_user }}"
-          register: metallb_ready
+          kubernetes.core.k8s_info:
+            kind: Pod
+            namespace: metallb-system
+            label_selectors:
+              - app=metallb
+          register: metallb_pods
+          until: 
+            - metallb_pods.resources is defined
+            - metallb_pods.resources | length > 0
+            - metallb_pods.resources | map(attribute='status.phase') | list | unique == ['Running']
           retries: 30
           delay: 10
-          until: metallb_ready.rc == 0
+          become: true
+          become_user: "{{ k8s_user }}"
 
         - name: Configure MetalLB IP pool
           kubernetes.core.k8s:
