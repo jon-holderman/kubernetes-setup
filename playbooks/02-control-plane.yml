@@ -163,6 +163,32 @@
           register: metallb_result
           changed_when: "'created' in metallb_result.stdout"
 
+        - name: Wait for MetalLB webhook to be ready
+          ansible.builtin.command: >
+            kubectl wait --namespace metallb-system
+            --for=condition=ready pod
+            --selector=app=metallb,component=webhook
+            --timeout=300s
+          become: true
+          become_user: "{{ k8s_user }}"
+          register: webhook_ready
+          retries: 30
+          delay: 10
+          until: webhook_ready.rc == 0
+
+        - name: Wait for MetalLB controller to be ready
+          ansible.builtin.command: >
+            kubectl wait --namespace metallb-system
+            --for=condition=ready pod
+            --selector=app=metallb,component=controller
+            --timeout=300s
+          become: true
+          become_user: "{{ k8s_user }}"
+          register: controller_ready
+          retries: 30
+          delay: 10
+          until: controller_ready.rc == 0
+
         - name: Configure MetalLB IP pool
           kubernetes.core.k8s:
             state: present
