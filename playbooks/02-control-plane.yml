@@ -326,29 +326,28 @@
             group: "{{ k8s_group }}"
           register: nginx_download
 
-        - name: Add tolerations to all NGINX components
-          ansible.builtin.replace:
-            path: "{{ temp_manifest_dir }}/nginx-ingress.yaml"
-            regexp: "{{ item.regexp }}"
-            replace: "{{ item.replace }}"
-          loop:
-            # Add tolerations to the ingress controller deployment
-            - regexp: '(kind: Deployment[\s\S]*?name:\s*ingress-nginx-controller[\s\S]*?spec:[\s\S]*?template:[\s\S]*?spec:)'
-              replace: |
-                \1
-                tolerations:
-                  - key: node-role.kubernetes.io/control-plane
-                    operator: Exists
-                    effect: NoSchedule
-            # Add tolerations to both admission jobs
-            - regexp: '(kind: Job[\s\S]*?name:\s*ingress-nginx-admission[\s\S]*?spec:[\s\S]*?template:[\s\S]*?spec:)'
-              replace: |
-                \1
-                tolerations:
-                  - key: node-role.kubernetes.io/control-plane
-                    operator: Exists
-                    effect: NoSchedule
-          become: true
+        - name: Load the manifest YAML file into a variable
+          ansible.builtin.slurp:
+            src: "{{ temp_manifest_dir }}/nginx-ingress.yaml"
+          register: manifest_content
+    
+        - name: Convert YAML content to a structured variable
+          ansible.builtin.set_fact:
+            manifest_data: "{{ manifest_content.content | b64decode | from_yaml }}"
+    
+        - name: Add tolerations to ingress controller deployment
+          ansible.builtin.set_fact:
+            manifest_data: "{{ manifest_data | merge({'items': [{'spec': {'template': {'spec': {'tolerations': [{'key': 'node-role.kubernetes.io/control-plane', 'operator': 'Exists', 'effect': 'NoSchedule'}]}}}}]}) }}"
+    
+        - name: Convert modified YAML structure back to a string
+          ansible.builtin.set_fact:
+            updated_manifest: "{{ manifest_data | to_yaml }}"
+    
+        - name: Write the modified manifest back to the file
+          ansible.builtin.copy:
+            dest: "{{ temp_manifest_dir }}/nginx-ingress-modified.yaml"
+            content: "{{ updated_manifest }}"
+            mode: '0664'
 
         - name: Debug controller deployment section
           ansible.builtin.shell: |
