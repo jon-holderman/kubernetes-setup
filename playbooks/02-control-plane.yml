@@ -12,7 +12,9 @@
       ansible.builtin.file:
         path: "{{ temp_manifest_dir }}"
         state: directory
-        mode: '0750'
+        owner: "{{ k8s_user }}"
+        group: "{{ k8s_group }}"
+        mode: '0640'
 
   tasks:
     - name: Install Kubernetes packages
@@ -32,7 +34,8 @@
       when: not ansible_check_mode
 
     - name: Get short hostname
-      ansible.builtin.command: hostname -s
+      ansible.builtin.command:
+        cmd: hostname -s
       register: hostname_result
       changed_when: false
 
@@ -175,8 +178,8 @@
         register: calico_result
 
       - name: Wait for Calico pods to be ready
-        ansible.builtin.command: >
-          kubectl wait --namespace kube-system --for=condition=ready pod --selector=k8s-app=calico-node --timeout=180s
+        ansible.builtin.command:
+          cmd: kubectl wait --namespace kube-system --for=condition=ready pod --selector=k8s-app=calico-node --timeout=180s
         become: true
         become_user: "{{ k8s_user }}"
         register: calico_ready
@@ -229,8 +232,8 @@
           register: metallb_result
 
         - name: Wait for MetalLB pods to be ready
-          ansible.builtin.command: >
-            kubectl wait --namespace metallb-system --for=condition=ready pod --selector=app=metallb --timeout=180s
+          ansible.builtin.command:
+            cmd: kubectl wait --namespace metallb-system --for=condition=ready pod --selector=app=metallb --timeout=180s
           become: true
           become_user: "{{ k8s_user }}"
           register: metallb_ready
