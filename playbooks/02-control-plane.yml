@@ -340,20 +340,19 @@
             modified_manifests: "{{ nginx_manifests | map('combine', 
               {'spec': {'template': {'spec': {'tolerations': [{'key': 'node-role.kubernetes.io/control-plane', 'operator': 'Exists', 'effect': 'NoSchedule'}]}}}}, 
               recursive=True) 
-              if (item.kind == manifest.kind and item.name == manifest.metadata.name) 
-              else manifest }}"
-          loop: "{{ nginx_manifests }}"
+              if (item.kind in ['Deployment', 'Job'] and item.metadata.name in ['ingress-nginx-controller', 'ingress-nginx-admission-create', 'ingress-nginx-admission-patch'])
+              else item }}"
           vars:
-            toleration_targets:
-              - { kind: "Deployment", name: "ingress-nginx-controller" }
-              - { kind: "Job", name: "ingress-nginx-admission-create" }
-              - { kind: "Job", name: "ingress-nginx-admission-patch" }
+            toleration:
+              key: "node-role.kubernetes.io/control-plane"
+              operator: "Exists"
+              effect: "NoSchedule"
     
-        - name: Debug modified manifests
+        - name: Debug modified components
           ansible.builtin.debug:
-            msg: "{{ modified_manifests | selectattr('kind', 'in', ['Deployment', 'Job']) | 
-                     selectattr('metadata.name', 'match', '(ingress-nginx-controller|ingress-nginx-admission-)') | 
-                     map(attribute='spec.template.spec.tolerations') | list }}"
+            msg: "Component {{ item.kind }}/{{ item.metadata.name }} tolerations: {{ item.spec.template.spec.tolerations | default('none') }}"
+          loop: "{{ modified_manifests }}"
+          when: item.kind in ['Deployment', 'Job'] and item.metadata.name in ['ingress-nginx-controller', 'ingress-nginx-admission-create', 'ingress-nginx-admission-patch']
     
         - name: Write modified manifests back to file
           ansible.builtin.copy:
