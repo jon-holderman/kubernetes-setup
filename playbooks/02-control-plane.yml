@@ -29,7 +29,7 @@
 
     - name: Generate kubeadm config
       ansible.builtin.template:
-        src: templates/kubeadm-config.yaml.j2
+        src: ../templates/kubeadm-config.yaml.j2
         dest: /etc/kubernetes/kubeadm-config.yaml
         owner: "{{ k8s_user }}"
         group: "{{ k8s_group }}"
