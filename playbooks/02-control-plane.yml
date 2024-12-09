@@ -60,7 +60,7 @@
             append: true
           loop:
             - "{{ k8s_user }}"
-            - "{{ ansible_user }}'"
+            - "{{ ansible_user }}"
 
         - name: Set proper permissions on kubernetes config directory
           ansible.builtin.file:
