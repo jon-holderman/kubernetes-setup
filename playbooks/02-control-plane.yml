@@ -332,12 +332,22 @@
             regexp: "{{ item.regexp }}"
             replace: "{{ item.replace }}"
           loop:
-            # Add tolerations to the controller deployment
-            - regexp: '(kind: Deployment\n[\s\S]*?name: ingress-nginx-controller[\s\S]*?spec:[\s\S]*?template:[\s\S]*?spec:[\s\S]*?)(\s*containers:)'
-              replace: '\1      tolerations:\n      - key: node-role.kubernetes.io/control-plane\n        operator: Exists\n        effect: NoSchedule\n\2'
+            # Add tolerations to the ingress controller deployment
+            - regexp: '(kind: Deployment[\s\S]*?name:\s*ingress-nginx-controller[\s\S]*?spec:[\s\S]*?template:[\s\S]*?spec:)'
+              replace: |
+                \1
+                tolerations:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: Exists
+                    effect: NoSchedule
             # Add tolerations to both admission jobs
-            - regexp: '(kind: Job[\s\S]*?spec:[\s\S]*?template:[\s\S]*?spec:[\s\S]*?)(\s*nodeSelector:)'
-              replace: '\1      tolerations:\n      - key: node-role.kubernetes.io/control-plane\n        operator: Exists\n        effect: NoSchedule\n\2'
+            - regexp: '(kind: Job[\s\S]*?name:\s*ingress-nginx-admission[\s\S]*?spec:[\s\S]*?template:[\s\S]*?spec:)'
+              replace: |
+                \1
+                tolerations:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: Exists
+                    effect: NoSchedule
           become: true
 
         - name: Debug controller deployment section
