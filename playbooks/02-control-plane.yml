@@ -4,6 +4,15 @@
   hosts: control_plane
   become: true
   gather_facts: true
+  vars:
+    temp_manifest_dir: "/tmp/k8s_manifests"
+
+  pre_tasks:
+    - name: Create temporary directory for manifests
+      ansible.builtin.file:
+        path: "{{ temp_manifest_dir }}"
+        state: directory
+        mode: '0750'
 
   tasks:
     - name: Install Kubernetes packages
@@ -145,45 +154,38 @@
       delay: 10
       until: api_ready is success
 
-    - name: Check if Calico is already installed
-      ansible.builtin.command: 
-        cmd: kubectl get pods -n kube-system -l k8s-app=calico-node
-      register: calico_check
-      changed_when: false
-      failed_when: false
-      become: true
-      become_user: "{{ k8s_user }}"
+    - name: Install Calico
+      block:
 
-    - name: Install Calico CNI
-      ansible.builtin.shell: |
-        export KUBECONFIG=/home/{{ ansible_user }}/.kube/config
-        kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml
-      become: true
-      become_user: "{{ k8s_user }}"
-      register: calico_result
-      changed_when: "'created' in calico_result.stdout"
-      when: calico_check.rc != 0
+      - name: Download Calico manifest
+        ansible.builtin.get_url:
+          url: "https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml"
+          dest: "{{ temp_manifest_dir }}/calico.yaml"
+          mode: '0664'
+        register: calico_download
 
-    - name: Wait for Calico pods to be ready
-      ansible.builtin.command:
-        cmd: kubectl wait --namespace kube-system --for=condition=ready pod --selector=k8s-app=calico-node --timeout=180s
-      become: true
-      become_user: "{{ k8s_user }}"
-      register: calico_ready
-      retries: 30
-      delay: 10
-      until: calico_ready.rc == 0
+      - name: Apply Calico manifest
+        kubernetes.core.k8s:
+          state: present
+          src: "{{ temp_manifest_dir }}/calico.yaml"
+          wait: true
+          wait_timeout: 300
+        become: true
+        become_user: "{{ k8s_user }}"
+        register: calico_result
+
+      - name: Wait for Calico pods to be ready
+        ansible.builtin.command: >
+          kubectl wait --namespace kube-system --for=condition=ready pod --selector=k8s-app=calico-node --timeout=180s
+        become: true
+        become_user: "{{ k8s_user }}"
+        register: calico_ready
+        retries: 30
+        delay: 10
+        until: calico_ready.rc == 0
 
     - name: Install MetalLB
       block:
-
-        - name: Check if MetalLB namespace exists
-          kubernetes.core.k8s_info:
-            kind: Namespace
-            name: metallb-system
-          register: metallb_ns
-          become: true
-          become_user: "{{ k8s_user }}"
 
         - name: Create MetalLB namespace
           kubernetes.core.k8s:
@@ -191,16 +193,6 @@
             api_version: v1
             kind: Namespace
             state: present
-          become: true
-          become_user: "{{ k8s_user }}"
-          when: metallb_ns.resources | length == 0
-
-        - name: Check if memberlist secret exists
-          kubernetes.core.k8s_info:
-            kind: Secret
-            name: memberlist
-            namespace: metallb-system
-          register: memberlist_secret
           become: true
           become_user: "{{ k8s_user }}"
 
@@ -218,41 +210,33 @@
                 secretkey: "{{ lookup('password', '/dev/null chars=ascii_letters,digits length=128') }}"
           become: true
           become_user: "{{ k8s_user }}"
-          when: memberlist_secret.resources | length == 0
 
-        - name: Install MetalLB operator
-          ansible.builtin.command:
-            cmd: "kubectl create -f https://raw.githubusercontent.com/metallb/metallb/{{ metallb_version }}/config/manifests/metallb-native.yaml"
+        - name: Download MetalLB manifest
+          ansible.builtin.get_url:
+            url: "https://raw.githubusercontent.com/metallb/metallb/{{ metallb_version }}/config/manifests/metallb-native.yaml"
+            dest: "{{ temp_manifest_dir }}/metallb.yaml"
+            mode: '0664'
+          register: metallb_download
+
+        - name: Apply MetalLB manifest
+          kubernetes.core.k8s:
+            state: present
+            src: "{{ temp_manifest_dir }}/metallb.yaml"
+            wait: yes
+            wait_timeout: 300
           become: true
           become_user: "{{ k8s_user }}"
           register: metallb_result
-          changed_when: "'created' in metallb_result.stdout"
 
-        - name: Wait for MetalLB webhook to be ready
+        - name: Wait for MetalLB pods to be ready
           ansible.builtin.command: >
-            kubectl wait --namespace metallb-system
-            --for=condition=ready pod
-            --selector=app=metallb,component=webhook
-            --timeout=300s
+            kubectl wait --namespace metallb-system --for=condition=ready pod --selector=app=metallb --timeout=180s
           become: true
           become_user: "{{ k8s_user }}"
-          register: webhook_ready
+          register: metallb_ready
           retries: 30
           delay: 10
-          until: webhook_ready.rc == 0
-
-        - name: Wait for MetalLB controller to be ready
-          ansible.builtin.command: >
-            kubectl wait --namespace metallb-system
-            --for=condition=ready pod
-            --selector=app=metallb,component=controller
-            --timeout=300s
-          become: true
-          become_user: "{{ k8s_user }}"
-          register: controller_ready
-          retries: 30
-          delay: 10
-          until: controller_ready.rc == 0
+          until: metallb_ready.rc == 0
 
         - name: Configure MetalLB IP pool
           kubernetes.core.k8s:
@@ -285,12 +269,24 @@
           become_user: "{{ k8s_user }}"
 
     - name: Install NGINX Ingress Controller
-      ansible.builtin.command:
-        cmd: "kubectl create -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-{{ nginx_ingress_version }}/deploy/static/provider/cloud/deploy.yaml"
-      become: true
-      become_user: "{{ k8s_user }}"
-      register: nginx_result
-      changed_when: "'created' in nginx_result.stdout"
+      block:
+
+        - name: Download NGINX Ingress Controller manifest
+          ansible.builtin.get_url:
+            url: "https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-{{ nginx_ingress_version }}/deploy/static/provider/cloud/deploy.yaml"
+            dest: "{{ temp_manifest_dir }}/nginx-ingress.yaml"
+            mode: '0664'
+          register: nginx_download
+  
+        - name: Apply NGINX Ingress Controller manifest
+          kubernetes.core.k8s:
+            state: present
+            src: "{{ temp_manifest_dir }}/nginx-ingress.yaml"
+            wait: yes
+            wait_timeout: 300
+          become: true
+          become_user: "{{ k8s_user }}"
+          register: nginx_result
 
     - name: Get join command
       ansible.builtin.command:
@@ -312,3 +308,10 @@
       retries: 30
       delay: 10
       until: node_ready.rc == 0
+
+  post_tasks:
+    - name: Clean up temporary manifest directory
+      ansible.builtin.file:
+        path: "{{ temp_manifest_dir }}"
+        state: absent
+      when: temp_manifest_dir is defined
