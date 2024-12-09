@@ -46,22 +46,68 @@
         - kubeadm_init.rc != 0
         - "'already exists' not in kubeadm_init.stderr"
 
-    - name: Create .kube directory for kubernetes service account
-      ansible.builtin.file:
-        path: "/home/{{ k8s_user }}/.kube"
-        state: directory
-        owner: "{{ k8s_user }}"
-        group: "{{ k8s_group }}"
-        mode: '0750'
+    - name: Set up Kubernetes configuration access
+      block:
+        - name: Create kubernetes group if it doesn't exist
+          ansible.builtin.group:
+            name: kubernetes
+            state: present
 
-    - name: Copy admin.conf to kubernetes service account's .kube directory
-      ansible.builtin.copy:
-        src: /etc/kubernetes/admin.conf
-        dest: "/home/{{ k8s_user }}/.kube/config"
-        remote_src: true
-        owner: "{{ k8s_user }}"
-        group: "{{ k8s_group }}"
-        mode: '0600'
+        - name: Add service accounts to kubernetes group
+          ansible.builtin.user:
+            name: "{{ item }}"
+            groups: kubernetes
+            append: true
+          loop:
+            - "{{ k8s_user }}"
+            - "{{ ansible_user }}'"
+
+        - name: Set proper permissions on kubernetes config directory
+          ansible.builtin.file:
+            path: /etc/kubernetes
+            state: directory
+            mode: '0750'
+            group: kubernetes
+
+        - name: Set proper permissions on admin.conf
+          ansible.builtin.file:
+            path: /etc/kubernetes/admin.conf
+            mode: '0640'
+            group: kubernetes
+
+        - name: Create .kube directory for ansible service account
+          ansible.builtin.file:
+            path: "/home/{{ ansible_user }}/.kube"
+            state: directory
+            owner: "{{ ansible_user }}"
+            group: kubernetes
+            mode: '0750'
+
+        - name: Copy admin.conf for ansible service account
+          ansible.builtin.copy:
+            src: /etc/kubernetes/admin.conf
+            dest: "/home/{{ ansible_user }}/.kube/config"
+            remote_src: true
+            owner: "{{ ansible_user }}"
+            group: kubernetes
+            mode: '0640'
+
+        - name: Create .kube directory for kubernetes service account
+          ansible.builtin.file:
+            path: "/home/{{ k8s_user }}/.kube"
+            state: directory
+            owner: "{{ k8s_user }}"
+            group: kubernetes
+            mode: '0750'
+
+        - name: Copy admin.conf for kubernetes service account
+          ansible.builtin.copy:
+            src: /etc/kubernetes/admin.conf
+            dest: "/home/{{ k8s_user }}/.kube/config"
+            remote_src: true
+            owner: "{{ k8s_user }}"
+            group: kubernetes
+            mode: '0640'
 
     - name: Set KUBECONFIG environment for service account
       ansible.builtin.lineinfile:
