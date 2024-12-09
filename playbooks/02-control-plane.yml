@@ -329,11 +329,45 @@
           kubernetes.core.k8s:
             state: present
             src: "{{ temp_manifest_dir }}/nginx-ingress.yaml"
-            wait: true
-            wait_timeout: 300
           become: true
           become_user: "{{ k8s_user }}"
           register: nginx_result
+
+        - name: Add tolerations to NGINX Ingress Controller
+          kubernetes.core.k8s:
+            state: patched
+            namespace: ingress-nginx
+            definition:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: ingress-nginx-controller
+                namespace: ingress-nginx
+              spec:
+                template:
+                  spec:
+                    tolerations:
+                      - effect: NoSchedule
+                        key: node-role.kubernetes.io/control-plane
+                        operator: Exists
+          become: true
+          become_user: "{{ k8s_user }}"
+
+        - name: Wait for NGINX Ingress Controller pods to be ready
+          kubernetes.core.k8s_info:
+            kind: Pod
+            namespace: ingress-nginx
+            label_selectors:
+              - app.kubernetes.io/component=controller
+          register: nginx_pods
+          until: 
+            - nginx_pods.resources is defined
+            - nginx_pods.resources | length > 0
+            - nginx_pods.resources | map(attribute='status.phase') | list | unique == ['Running']
+          retries: 30
+          delay: 10
+          become: true
+          become_user: "{{ k8s_user }}"
 
     - name: Get join command
       ansible.builtin.command:
