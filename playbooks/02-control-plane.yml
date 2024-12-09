@@ -337,41 +337,23 @@
     
         - name: Add tolerations to required components
           ansible.builtin.set_fact:
-            modified_manifests: "{{ nginx_manifests | map('combine', item.patch, recursive=True) 
-              if (item.kind in item.manifest.kind and item.name in item.manifest.metadata.name) else item.manifest }}"
+            modified_manifests: "{{ nginx_manifests | map('combine', 
+              {'spec': {'template': {'spec': {'tolerations': [{'key': 'node-role.kubernetes.io/control-plane', 'operator': 'Exists', 'effect': 'NoSchedule'}]}}}}, 
+              recursive=True) 
+              if (item.kind == manifest.kind and item.name == manifest.metadata.name) 
+              else manifest }}"
+          loop: "{{ nginx_manifests }}"
           vars:
-            toleration_spec:
-              - kind: "Deployment"
-                name: "ingress-nginx-controller"
-                patch:
-                  spec:
-                    template:
-                      spec:
-                        tolerations:
-                          - key: "node-role.kubernetes.io/control-plane"
-                            operator: "Exists"
-                            effect: "NoSchedule"
-              - kind: "Job"
-                name: "ingress-nginx-admission-create"
-                patch:
-                  spec:
-                    template:
-                      spec:
-                        tolerations:
-                          - key: "node-role.kubernetes.io/control-plane"
-                            operator: "Exists"
-                            effect: "NoSchedule"
-              - kind: "Job"
-                name: "ingress-nginx-admission-patch"
-                patch:
-                  spec:
-                    template:
-                      spec:
-                        tolerations:
-                          - key: "node-role.kubernetes.io/control-plane"
-                            operator: "Exists"
-                            effect: "NoSchedule"
-          loop: "{{ toleration_spec }}"
+            toleration_targets:
+              - { kind: "Deployment", name: "ingress-nginx-controller" }
+              - { kind: "Job", name: "ingress-nginx-admission-create" }
+              - { kind: "Job", name: "ingress-nginx-admission-patch" }
+    
+        - name: Debug modified manifests
+          ansible.builtin.debug:
+            msg: "{{ modified_manifests | selectattr('kind', 'in', ['Deployment', 'Job']) | 
+                     selectattr('metadata.name', 'match', '(ingress-nginx-controller|ingress-nginx-admission-)') | 
+                     map(attribute='spec.template.spec.tolerations') | list }}"
     
         - name: Write modified manifests back to file
           ansible.builtin.copy:
@@ -381,12 +363,6 @@
             owner: "{{ k8s_user }}"
             group: "{{ k8s_group }}"
     
-        - name: Debug modified components
-          ansible.builtin.debug:
-            msg: "{{ modified_manifests | json_query(query) }}"
-          vars:
-            query: "[?kind=='Deployment' || kind=='Job'].{kind: kind, name: metadata.name, tolerations: spec.template.spec.tolerations}"
-    
         - name: Apply NGINX Ingress Controller manifest
           kubernetes.core.k8s:
             state: present
@@ -394,7 +370,7 @@
           become: true
           become_user: "{{ k8s_user }}"
           register: nginx_result
-
+    
         - name: Wait for NGINX Ingress admission jobs to complete
           kubernetes.core.k8s_info:
             kind: Job
