@@ -16,10 +16,6 @@
         owner: "{{ k8s_user }}"
         group: "{{ k8s_group }}"
 
-    - name: Ensure SELinux context is correct for temp directory
-      ansible.builtin.command: "chcon -Rt container_file_t {{ temp_manifest_dir }}"
-      changed_when: true
-
   tasks:
     - name: Install Kubernetes packages
       ansible.builtin.dnf:
