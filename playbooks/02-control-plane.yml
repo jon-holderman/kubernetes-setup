@@ -65,7 +65,7 @@
 
     - name: Install Calico CNI
       ansible.builtin.command:
-        cmd: "kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml --validate=false"
+        cmd: "kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml --validate=false --force=true"
       become: true
       become_user: "{{ k8s_user }}"
       register: calico_result
@@ -84,7 +84,7 @@
 
         - name: Install MetalLB operator
           ansible.builtin.command:
-            cmd: "kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/{{ metallb_version }}/config/manifests/metallb-native.yaml --validate=false"
+            cmd: "kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/{{ metallb_version }}/config/manifests/metallb-native.yaml --validate=false --force=true"
           become: true
           become_user: "{{ k8s_user }}"
           register: metallb_result
@@ -121,15 +121,16 @@
           become_user: "{{ k8s_user }}"
 
     - name: Install NGINX Ingress Controller
-      ansible.builtin.command: >
-        kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-{{ nginx_ingress_version }}/deploy/static/provider/cloud/deploy.yaml
+      ansible.builtin.command:
+        cmd: "kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-{{ nginx_ingress_version }}/deploy/static/provider/cloud/deploy.yaml --validate=false --force=true"
       become: true
       become_user: "{{ k8s_user }}"
       register: nginx_result
       changed_when: "'created' in nginx_result.stdout"
 
     - name: Get join command
-      ansible.builtin.command: kubeadm token create --print-join-command
+      ansible.builtin.command:
+        cmd: kubeadm token create --print-join-command
       register: join_command
       changed_when: false
 
@@ -138,7 +139,8 @@
         join_command: "{{ join_command.stdout_strip }}"
 
     - name: Wait for control plane to be ready
-      ansible.builtin.command: kubectl wait --for=condition=Ready node/{{ hostname_result.stdout }} --timeout=300s
+      ansible.builtin.command: 
+        cmd: "kubectl wait --for=condition=Ready node/{{ hostname_result.stdout }} --timeout=300s"
       become: true
       become_user: "{{ k8s_user }}"
       register: node_ready
