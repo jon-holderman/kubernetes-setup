@@ -1,11 +1,115 @@
+# playbooks/03-worker-setup.yml
 ---
-- name: Worker Node Configuration
-  hosts: all
+- name: Retrieve Join Command
+  hosts: control_plane
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Get worker join command
+      ansible.builtin.command:
+        cmd: kubeadm token create --print-join-command
+      register: join_command_output
+      changed_when: false
+      become_user: "{{ k8s_user }}"
+
+    - name: Set join command fact
+      ansible.builtin.set_fact:
+        worker_join_command: "{{ join_command_output.stdout }}"
+
+- name: Set up Kubernetes Worker Nodes
+  hosts: workers
   become: true
   gather_facts: true
+  vars:
+    temp_manifest_dir: "/tmp/k8s_manifests"
+
+  pre_tasks:
+    - name: Ensure required variables are set
+      ansible.builtin.assert:
+        that:
+          - k8s_user is defined
+          - k8s_group is defined
+          - hostvars[groups['control_plane'][0]]['worker_join_command'] is defined
+        fail_msg: "Required variables are not set"
 
   tasks:
-    - name: Todo Message
-      ansible.builtin.debug:
-        msg:
-          - "Work in Progress..."
+    - name: Install Kubernetes packages
+      ansible.builtin.dnf:
+        name:
+          - kubelet-{{ kubernetes_version }}
+          - kubeadm-{{ kubernetes_version }}
+          - kubectl-{{ kubernetes_version }}
+        state: present
+        disable_excludes: kubernetes
+
+    - name: Enable and start kubelet service
+      ansible.builtin.systemd:
+        name: kubelet
+        state: started
+        enabled: true
+
+    - name: Get short hostname
+      ansible.builtin.command: hostname -s
+      register: hostname_result
+      changed_when: false
+
+    - name: Join cluster as worker
+      ansible.builtin.command: "{{ hostvars[groups['control_plane'][0]]['worker_join_command'] }}"
+      register: join_result
+      changed_when: "'This node has joined the cluster' in join_result.stdout"
+      failed_when: 
+        - join_result.rc != 0
+        - "'already exists' not in join_result.stderr"
+
+    - name: Set up Kubernetes configuration access
+      block:
+        - name: Create kubernetes group if it doesn't exist
+          ansible.builtin.group:
+            name: "{{ k8s_group }}"
+            state: present
+
+        - name: Add service accounts to kubernetes group
+          ansible.builtin.user:
+            name: "{{ item }}"
+            groups: "{{ k8s_group }}"
+            append: true
+          loop:
+            - "{{ k8s_user }}"
+            - "{{ ansible_user }}"
+
+        - name: Create .kube directory for kubernetes service account
+          ansible.builtin.file:
+            path: "/home/{{ k8s_user }}/.kube"
+            state: directory
+            owner: "{{ k8s_user }}"
+            group: "{{ k8s_group }}"
+            mode: '0750'
+
+    - name: Wait for node to be ready
+      ansible.builtin.command: 
+        cmd: "kubectl wait --for=condition=Ready node/{{ hostname_result.stdout }} --timeout=300s"
+      delegate_to: "{{ groups['control_plane'][0] }}"
+      become: true
+      become_user: "{{ k8s_user }}"
+      register: node_ready
+      changed_when: false
+      retries: 30
+      delay: 10
+      until: node_ready.rc == 0
+
+    - name: Label node as worker
+      ansible.builtin.command:
+        cmd: "kubectl label node {{ hostname_result.stdout }} node-role.kubernetes.io/worker=worker --overwrite"
+      delegate_to: "{{ groups['control_plane'][0] }}"
+      become: true
+      become_user: "{{ k8s_user }}"
+      changed_when: true
+
+    - name: Verify node status
+      ansible.builtin.command:
+        cmd: "kubectl get node {{ hostname_result.stdout }} -o wide"
+      delegate_to: "{{ groups['control_plane'][0] }}"
+      become: true
+      become_user: "{{ k8s_user }}"
+      register: node_status
+      changed_when: false
