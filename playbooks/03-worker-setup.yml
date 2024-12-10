@@ -34,6 +34,23 @@
         fail_msg: "Required variables are not set"
 
   tasks:
+
+    - name: Get short hostname
+      ansible.builtin.command: 
+        cmd: hostname -s
+      register: hostname_result
+      changed_when: false
+
+    - name: Check if node is already joined
+      ansible.builtin.command:
+        cmd: "kubectl get node {{ hostname_result.stdout }}"
+      delegate_to: "{{ groups['control_plane'][0] }}"
+      become: true
+      become_user: "{{ k8s_user }}"
+      register: node_check
+      changed_when: false
+      failed_when: false
+
     - name: Install Kubernetes packages
       ansible.builtin.dnf:
         name:
@@ -42,25 +59,23 @@
           - kubectl-{{ kubernetes_version }}
         state: present
         disable_excludes: kubernetes
+      when: node_check.rc != 0
 
     - name: Enable and start kubelet service
       ansible.builtin.systemd:
         name: kubelet
         state: started
         enabled: true
-
-    - name: Get short hostname
-      ansible.builtin.command: hostname -s
-      register: hostname_result
-      changed_when: false
+      when: node_check.rc != 0
 
     - name: Join cluster as worker
-      ansible.builtin.command: "{{ hostvars[groups['control_plane'][0]]['worker_join_command'] }}"
+      ansible.builtin.command: "{{ hostvars[groups['control_plane'][0]]['worker_join_command'] }} --node-name={{ hostname_result.stdout }}"
       register: join_result
       changed_when: "'This node has joined the cluster' in join_result.stdout"
       failed_when: 
         - join_result.rc != 0
         - "'already exists' not in join_result.stderr"
+      when: node_check.rc != 0
 
     - name: Set up Kubernetes configuration access
       block:
@@ -85,18 +100,30 @@
             owner: "{{ k8s_user }}"
             group: "{{ k8s_group }}"
             mode: '0750'
+      when: node_check.rc != 0
 
     - name: Wait for node to be ready
       ansible.builtin.command: 
-        cmd: "kubectl wait --for=condition=Ready node/{{ hostname_result.stdout }} --timeout=300s"
+        cmd: "kubectl wait --for=condition=Ready node/{{ hostname_result.stdout }} --timeout=60s"
       delegate_to: "{{ groups['control_plane'][0] }}"
       become: true
       become_user: "{{ k8s_user }}"
       register: node_ready
       changed_when: false
-      retries: 30
-      delay: 10
+      retries: 10
+      delay: 6
       until: node_ready.rc == 0
+      when: node_check.rc != 0
+
+    - name: Check if node is already labeled as worker
+      ansible.builtin.command:
+        cmd: "kubectl get node {{ hostname_result.stdout }} -o jsonpath='{.metadata.labels.node-role.kubernetes.io/worker}'"
+      delegate_to: "{{ groups['control_plane'][0] }}"
+      become: true
+      become_user: "{{ k8s_user }}"
+      register: label_check
+      changed_when: false
+      failed_when: false
 
     - name: Label node as worker
       ansible.builtin.command:
@@ -105,6 +132,7 @@
       become: true
       become_user: "{{ k8s_user }}"
       changed_when: true
+      when: label_check.stdout != 'worker'
 
     - name: Verify node status
       ansible.builtin.command:
