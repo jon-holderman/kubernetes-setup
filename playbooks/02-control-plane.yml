@@ -331,27 +331,33 @@
           ansible.builtin.slurp:
             src: "{{ temp_manifest_dir }}/nginx-ingress.yaml"
           register: nginx_manifest_encoded
-    
+
         - name: Parse YAML content
           ansible.builtin.set_fact:
             nginx_documents: "{{ nginx_manifest_encoded['content'] | b64decode | from_yaml_all | list }}"
-    
-        # First debug all document kinds and names
-        - name: Debug all documents
-          ansible.builtin.debug:
-            msg: "Kind: {{ item.kind }}, Name: {{ item.metadata.name | default('no name') }}"
-          loop: "{{ nginx_documents }}"
 
-        # Then specifically look for our target documents
-        - name: Debug target documents
+        - name: Add tolerations to documents
+          ansible.builtin.set_fact:
+            modified_documents: "{{ nginx_documents | map('combine', 
+              {'spec': {'template': {'spec': {'tolerations': [{'key': 'node-role.kubernetes.io/control-plane', 'operator': 'Exists', 'effect': 'NoSchedule'}]}}}} 
+              if (item.kind in ['Deployment', 'Job'] and item.metadata.name in ['ingress-nginx-controller', 'ingress-nginx-admission-create', 'ingress-nginx-admission-patch']) 
+              else item, recursive=True) | list }}"
+
+        - name: Debug modified deployment
           ansible.builtin.debug:
-            msg: |
-              Found {{ item.kind }}/{{ item.metadata.name }}:
-              {{ item | to_yaml }}
+            msg: "{{ item | to_yaml }}"
           when: 
-            - item.kind in ['Deployment', 'Job']
-            - item.metadata.name in ['ingress-nginx-controller', 'ingress-nginx-admission-create', 'ingress-nginx-admission-patch']
-          loop: "{{ nginx_documents }}"
+            - item.kind == 'Deployment'
+            - item.metadata.name == 'ingress-nginx-controller'
+          loop: "{{ modified_documents }}"
+
+        - name: Write modified manifests back to file
+          ansible.builtin.copy:
+            content: "{{ modified_documents | to_yaml_all }}"
+            dest: "{{ temp_manifest_dir }}/nginx-ingress.yaml"
+            mode: '0664'
+            owner: "{{ k8s_user }}"
+            group: "{{ k8s_group }}"
 
         # - name: Load NGINX manifest into variable
         #   ansible.builtin.slurp:
