@@ -338,10 +338,15 @@
 
         - name: Add tolerations to documents
           ansible.builtin.set_fact:
-            modified_documents: "{{ nginx_documents | map('combine', 
-              {'spec': {'template': {'spec': {'tolerations': [{'key': 'node-role.kubernetes.io/control-plane', 'operator': 'Exists', 'effect': 'NoSchedule'}]}}}} 
-              if (item.kind in ['Deployment', 'Job'] and item.metadata.name in ['ingress-nginx-controller', 'ingress-nginx-admission-create', 'ingress-nginx-admission-patch']) 
-              else item, recursive=True) | list }}"
+            modified_documents: >-
+              {% set docs = [] %}
+              {% for doc in nginx_documents %}
+              {%   if doc.kind in ['Deployment', 'Job'] and doc.metadata.name in ['ingress-nginx-controller', 'ingress-nginx-admission-create', 'ingress-nginx-admission-patch'] %}
+              {%     set _ = doc.spec.template.spec.update({'tolerations': [{'key': 'node-role.kubernetes.io/control-plane', 'operator': 'Exists', 'effect': 'NoSchedule'}]}) %}
+              {%   endif %}
+              {%   set _ = docs.append(doc) %}
+              {% endfor %}
+              {{ docs }}
 
         - name: Debug modified deployment
           ansible.builtin.debug:
@@ -395,13 +400,13 @@
         #     owner: "{{ k8s_user }}"
         #     group: "{{ k8s_group }}"
     
-        # - name: Apply NGINX Ingress Controller manifest
-        #   kubernetes.core.k8s:
-        #     state: present
-        #     src: "{{ temp_manifest_dir }}/nginx-ingress.yaml"
-        #   become: true
-        #   become_user: "{{ k8s_user }}"
-        #   register: nginx_result
+        - name: Apply NGINX Ingress Controller manifest
+          kubernetes.core.k8s:
+            state: present
+            src: "{{ temp_manifest_dir }}/nginx-ingress.yaml"
+          become: true
+          become_user: "{{ k8s_user }}"
+          register: nginx_result
     
         - name: Wait for NGINX Ingress admission jobs to complete
           kubernetes.core.k8s_info:
