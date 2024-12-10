@@ -354,11 +354,6 @@
           ansible.builtin.set_fact:
             modified_documents_list: "{{ modified_documents | from_json }}"
 
-        - name: Debug all modified documents
-          ansible.builtin.debug:
-            msg: "Document {{ item.kind }}/{{ item.metadata.name }}"
-          loop: "{{ modified_documents_list }}"
-
         - name: Debug modified target documents
           ansible.builtin.debug:
             msg: |
@@ -372,7 +367,11 @@
 
         - name: Write modified manifests back to file
           ansible.builtin.copy:
-            content: "{{ modified_documents_list | to_yaml_all }}"
+            content: |
+              {% for doc in modified_documents_list %}
+              {{ doc | to_yaml }}
+              ---
+              {% endfor %}
             dest: "{{ temp_manifest_dir }}/nginx-ingress.yaml"
             mode: '0664'
             owner: "{{ k8s_user }}"
