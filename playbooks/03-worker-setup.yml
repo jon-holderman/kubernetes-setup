@@ -29,6 +29,7 @@
         that:
           - k8s_user is defined
           - k8s_group is defined
+          - kubernetes_version is defined
           - hostvars[groups['control_plane'][0]]['worker_join_command'] is defined
         fail_msg: "Required variables are not set"
 
