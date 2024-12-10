@@ -317,6 +317,7 @@
 
     - name: Install NGINX Ingress Controller
       block:
+
         - name: Download NGINX Ingress Controller manifest
           ansible.builtin.get_url:
             url: "https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-{{ nginx_ingress_version }}/deploy/static/provider/cloud/deploy.yaml"
@@ -325,7 +326,7 @@
             owner: "{{ k8s_user }}"
             group: "{{ k8s_group }}"
           register: nginx_download
-
+    
         - name: Load NGINX manifest into variable
           ansible.builtin.slurp:
             src: "{{ temp_manifest_dir }}/nginx-ingress.yaml"
@@ -333,42 +334,59 @@
     
         - name: Parse YAML content
           ansible.builtin.set_fact:
-            nginx_manifests: "{{ nginx_manifest_encoded['content'] | b64decode | from_yaml_all | list }}"
+            nginx_documents: "{{ nginx_manifest_encoded['content'] | b64decode | from_yaml_all | list }}"
     
-        - name: Add tolerations to required components
-          ansible.builtin.set_fact:
-            modified_manifests: "{{ nginx_manifests | map('combine', 
-              {'spec': {'template': {'spec': {'tolerations': [{'key': 'node-role.kubernetes.io/control-plane', 'operator': 'Exists', 'effect': 'NoSchedule'}]}}}}, 
-              recursive=True) 
-              if (item.kind in ['Deployment', 'Job'] and item.metadata.name in ['ingress-nginx-controller', 'ingress-nginx-admission-create', 'ingress-nginx-admission-patch'])
-              else item }}"
-          vars:
-            toleration:
-              key: "node-role.kubernetes.io/control-plane"
-              operator: "Exists"
-              effect: "NoSchedule"
-    
-        - name: Debug modified components
+        - name: Debug deployment document
           ansible.builtin.debug:
-            msg: "Component {{ item.kind }}/{{ item.metadata.name }} tolerations: {{ item.spec.template.spec.tolerations | default('none') }}"
-          loop: "{{ modified_manifests }}"
-          when: item.kind in ['Deployment', 'Job'] and item.metadata.name in ['ingress-nginx-controller', 'ingress-nginx-admission-create', 'ingress-nginx-admission-patch']
+            msg: "{{ item }}"
+          when: 
+            - item.kind == 'Deployment'
+            - item.metadata.name == 'ingress-nginx-controller'
+          loop: "{{ nginx_documents }}"
+
+        # - name: Load NGINX manifest into variable
+        #   ansible.builtin.slurp:
+        #     src: "{{ temp_manifest_dir }}/nginx-ingress.yaml"
+        #   register: nginx_manifest_encoded
     
-        - name: Write modified manifests back to file
-          ansible.builtin.copy:
-            content: "{{ modified_manifests | to_yaml_all }}"
-            dest: "{{ temp_manifest_dir }}/nginx-ingress.yaml"
-            mode: '0664'
-            owner: "{{ k8s_user }}"
-            group: "{{ k8s_group }}"
+        # - name: Parse YAML content
+        #   ansible.builtin.set_fact:
+        #     nginx_manifests: "{{ nginx_manifest_encoded['content'] | b64decode | from_yaml_all | list }}"
     
-        - name: Apply NGINX Ingress Controller manifest
-          kubernetes.core.k8s:
-            state: present
-            src: "{{ temp_manifest_dir }}/nginx-ingress.yaml"
-          become: true
-          become_user: "{{ k8s_user }}"
-          register: nginx_result
+        # - name: Add tolerations to required components
+        #   ansible.builtin.set_fact:
+        #     modified_manifests: "{{ nginx_manifests | map('combine', 
+        #       {'spec': {'template': {'spec': {'tolerations': [{'key': 'node-role.kubernetes.io/control-plane', 'operator': 'Exists', 'effect': 'NoSchedule'}]}}}}, 
+        #       recursive=True) 
+        #       if (item.kind in ['Deployment', 'Job'] and item.metadata.name in ['ingress-nginx-controller', 'ingress-nginx-admission-create', 'ingress-nginx-admission-patch'])
+        #       else item }}"
+        #   vars:
+        #     toleration:
+        #       key: "node-role.kubernetes.io/control-plane"
+        #       operator: "Exists"
+        #       effect: "NoSchedule"
+    
+        # - name: Debug modified components
+        #   ansible.builtin.debug:
+        #     msg: "Component {{ item.kind }}/{{ item.metadata.name }} tolerations: {{ item.spec.template.spec.tolerations | default('none') }}"
+        #   loop: "{{ modified_manifests }}"
+        #   when: item.kind in ['Deployment', 'Job'] and item.metadata.name in ['ingress-nginx-controller', 'ingress-nginx-admission-create', 'ingress-nginx-admission-patch']
+    
+        # - name: Write modified manifests back to file
+        #   ansible.builtin.copy:
+        #     content: "{{ modified_manifests | to_yaml_all }}"
+        #     dest: "{{ temp_manifest_dir }}/nginx-ingress.yaml"
+        #     mode: '0664'
+        #     owner: "{{ k8s_user }}"
+        #     group: "{{ k8s_group }}"
+    
+        # - name: Apply NGINX Ingress Controller manifest
+        #   kubernetes.core.k8s:
+        #     state: present
+        #     src: "{{ temp_manifest_dir }}/nginx-ingress.yaml"
+        #   become: true
+        #   become_user: "{{ k8s_user }}"
+        #   register: nginx_result
     
         - name: Wait for NGINX Ingress admission jobs to complete
           kubernetes.core.k8s_info:
