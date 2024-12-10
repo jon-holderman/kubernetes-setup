@@ -336,12 +336,21 @@
           ansible.builtin.set_fact:
             nginx_documents: "{{ nginx_manifest_encoded['content'] | b64decode | from_yaml_all | list }}"
     
-        - name: Debug deployment document
+        # First debug all document kinds and names
+        - name: Debug all documents
           ansible.builtin.debug:
-            msg: "{{ item }}"
+            msg: "Kind: {{ item.kind }}, Name: {{ item.metadata.name | default('no name') }}"
+          loop: "{{ nginx_documents }}"
+
+        # Then specifically look for our target documents
+        - name: Debug target documents
+          ansible.builtin.debug:
+            msg: |
+              Found {{ item.kind }}/{{ item.metadata.name }}:
+              {{ item | to_yaml }}
           when: 
-            - item.kind == 'Deployment'
-            - item.metadata.name == 'ingress-nginx-controller'
+            - item.kind in ['Deployment', 'Job']
+            - item.metadata.name in ['ingress-nginx-controller', 'ingress-nginx-admission-create', 'ingress-nginx-admission-patch']
           loop: "{{ nginx_documents }}"
 
         # - name: Load NGINX manifest into variable
