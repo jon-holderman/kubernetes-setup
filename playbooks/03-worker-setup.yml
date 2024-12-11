@@ -1,7 +1,7 @@
 # playbooks/03-worker-setup.yml
 ---
 - name: Retrieve Join Command
-  hosts: control_plane
+  hosts: app_k8s_control_nodes
   become: true
   gather_facts: false
   tasks:
@@ -17,7 +17,7 @@
         worker_join_command: "{{ join_command_output.stdout }}"
 
 - name: Set up Kubernetes Worker Nodes
-  hosts: workers
+  hosts: app_k8s_worker_nodes
   become: true
   gather_facts: true
   vars:
@@ -30,7 +30,7 @@
           - k8s_user is defined
           - k8s_group is defined
           - kubernetes_version is defined
-          - hostvars[groups['control_plane'][0]]['worker_join_command'] is defined
+          - hostvars[groups['app_k8s_control_nodes'][0]]['worker_join_command'] is defined
         fail_msg: "Required variables are not set"
 
   tasks:
@@ -44,7 +44,7 @@
     - name: Check if node is already joined
       ansible.builtin.command:
         cmd: "kubectl get node {{ hostname_result.stdout }}"
-      delegate_to: "{{ groups['control_plane'][0] }}"
+      delegate_to: "{{ groups['app_k8s_control_nodes'][0] }}"
       become: true
       become_user: "{{ k8s_user }}"
       register: node_check
@@ -69,7 +69,7 @@
       when: node_check.rc != 0
 
     - name: Join cluster as worker
-      ansible.builtin.command: "{{ hostvars[groups['control_plane'][0]]['worker_join_command'] }} --node-name={{ hostname_result.stdout }}"
+      ansible.builtin.command: "{{ hostvars[groups['app_k8s_control_nodes'][0]]['worker_join_command'] }} --node-name={{ hostname_result.stdout }}"
       register: join_result
       changed_when: "'This node has joined the cluster' in join_result.stdout"
       failed_when: 
@@ -105,7 +105,7 @@
     - name: Wait for node to be ready
       ansible.builtin.command: 
         cmd: "kubectl wait --for=condition=Ready node/{{ hostname_result.stdout }} --timeout=60s"
-      delegate_to: "{{ groups['control_plane'][0] }}"
+      delegate_to: "{{ groups['app_k8s_control_nodes'][0] }}"
       become: true
       become_user: "{{ k8s_user }}"
       register: node_ready
@@ -118,7 +118,7 @@
     - name: Check if node is already labeled as worker
       ansible.builtin.command:
         cmd: "kubectl get node {{ hostname_result.stdout }} -o jsonpath='{.metadata.labels.node-role.kubernetes.io/worker}'"
-      delegate_to: "{{ groups['control_plane'][0] }}"
+      delegate_to: "{{ groups['app_k8s_control_nodes'][0] }}"
       become: true
       become_user: "{{ k8s_user }}"
       register: label_check
@@ -128,7 +128,7 @@
     - name: Label node as worker
       ansible.builtin.command:
         cmd: "kubectl label node {{ hostname_result.stdout }} node-role.kubernetes.io/worker=worker --overwrite"
-      delegate_to: "{{ groups['control_plane'][0] }}"
+      delegate_to: "{{ groups['app_k8s_control_nodes'][0] }}"
       become: true
       become_user: "{{ k8s_user }}"
       changed_when: true
@@ -137,7 +137,7 @@
     - name: Verify node status
       ansible.builtin.command:
         cmd: "kubectl get node {{ hostname_result.stdout }} -o wide"
-      delegate_to: "{{ groups['control_plane'][0] }}"
+      delegate_to: "{{ groups['app_k8s_control_nodes'][0] }}"
       become: true
       become_user: "{{ k8s_user }}"
       register: node_status

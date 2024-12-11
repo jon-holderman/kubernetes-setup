@@ -1,7 +1,7 @@
 # playbooks/02-control-plane.yml
 ---
 - name: Initialize Kubernetes Control Plane
-  hosts: control_plane
+  hosts: app_k8s_control_nodes
   become: true
   gather_facts: true
   vars:

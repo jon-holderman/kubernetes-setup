@@ -124,8 +124,8 @@
           changed_when: false
           loop:
             - "1.1.1.1" # Internet connectivity
-            - "{{ hostvars[groups['control_plane'][0]]['ansible_host'] }}" # Control plane
-          when: inventory_hostname in groups['workers']
+            - "{{ hostvars[groups['app_k8s_control_nodes'][0]]['ansible_host'] }}" # Control plane
+          when: inventory_hostname in groups['app_k8s_worker_nodes']
 
     - name: Verify DNS resolution
       block:
